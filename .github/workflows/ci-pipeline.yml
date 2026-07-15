@@ -1,0 +1,74 @@
+name: Advanced API Quality Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  execute-test-framework:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Provision Java Development Kit 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Stage 1 - AI Schema Drift Detection
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          mvn compile exec:java -Dexec.mainClass="com.api.blueprint.ai.SchemaDriftDetector"
+          
+      - name: Stage 2 - Execute REST Assured & Pact Suites
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          mvn clean test
+
+      - name: Stage 3 - Archive Raw Allure Results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: allure-results
+          path: target/allure-results
+          retention-days: 7
+
+      - name: Stage 4 - Publish Pact Contracts to Broker
+        if: success()
+        run: |
+          mvn pact:publish -Dpact.pactBrokerUrl=${{ secrets.PACT_BROKER_URL }} -Dpact.pactBrokerToken=${{ secrets.PACT_BROKER_TOKEN }}
+
+  publish-telemetry-report:
+    needs: execute-test-framework
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        
+      - name: Download Raw Allure Results
+        uses: actions/download-artifact@v3
+        with:
+          name: allure-results
+          path: allure-results
+
+      - name: Compile Allure HTML Report
+        uses: simple-elf/allure-report-action@master
+        with:
+          allure_results: allure-results
+          allure_history: allure-history
+
+      - name: Deploy Report to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: allure-history
