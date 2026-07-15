@@ -1,0 +1,16 @@
+# Maven build output
+target/
+.allure/
+
+# IDE configurations
+.idea/
+*.iml
+*.iws
+.settings/
+.classpath
+.project
+.factorypath
+
+# OS files
+.DS_Store
+Thumbs.db
