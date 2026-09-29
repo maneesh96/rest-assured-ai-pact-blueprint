@@ -2,7 +2,9 @@ name: Advanced API Quality Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    # Changes land on "staging" first; main is only fast-forwarded to a
+    # commit whose pipeline passed there.
+    branches: [ "main", "staging" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -27,10 +29,10 @@ jobs:
 
     steps:
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Provision Java Development Kit 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -44,7 +46,7 @@ jobs:
 
       - name: Stage 3 - Archive Raw Allure Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: allure-results
           path: target/allure-results
@@ -53,7 +55,7 @@ jobs:
 
       - name: Stage 3b - Archive Generated Pact Files
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pact-contracts
           path: target/pacts
@@ -70,19 +72,19 @@ jobs:
     needs: execute-test-framework
     runs-on: ubuntu-latest
     # Publish for main-branch pushes even when tests fail (that is when the report
-    # matters most), but never from pull requests.
-    if: always() && github.event_name != 'pull_request' && needs.execute-test-framework.result != 'cancelled'
+    # matters most), but never from pull requests or staging branches.
+    if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.execute-test-framework.result != 'cancelled'
     permissions:
       contents: write
     steps:
       - name: Download Raw Allure Results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: allure-results
           path: allure-results
 
       - name: Fetch Previous Report History
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         continue-on-error: true
         with:
           ref: gh-pages
@@ -95,6 +97,11 @@ jobs:
           gh_pages: gh-pages
           allure_history: allure-history
           keep_reports: 20
+
+      # The history checkout leaves a root-owned .git folder that the Allure
+      # action copies into allure-history; left there, it breaks the deploy.
+      - name: Strip Nested Git Metadata
+        run: sudo rm -rf allure-history/.git
 
       - name: Deploy Report to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
