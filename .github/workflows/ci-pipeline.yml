@@ -5,69 +5,99 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+
+# Least privilege by default; the report job asks for write access on its own.
+permissions:
+  contents: read
+
+# A newer push to the same ref makes the older run obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   execute-test-framework:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 20
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      PACT_BROKER_URL: ${{ secrets.PACT_BROKER_URL }}
+      PACT_BROKER_TOKEN: ${{ secrets.PACT_BROKER_TOKEN }}
+
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
       - name: Provision Java Development Kit 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
 
       - name: Stage 1 - AI Schema Drift Detection
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          mvn compile exec:java -Dexec.mainClass="com.api.blueprint.ai.SchemaDriftDetector"
-          
+        run: mvn -B compile exec:java -Dexec.mainClass="com.api.blueprint.ai.SchemaDriftDetector"
+
       - name: Stage 2 - Execute REST Assured & Pact Suites
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          mvn clean test
+        run: mvn -B test
 
       - name: Stage 3 - Archive Raw Allure Results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: allure-results
           path: target/allure-results
           retention-days: 7
+          if-no-files-found: warn
 
+      - name: Stage 3b - Archive Generated Pact Files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pact-contracts
+          path: target/pacts
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # Publishing needs a Pact Broker. Forks and fresh clones don't have one,
+      # so the step is skipped instead of failing the pipeline.
       - name: Stage 4 - Publish Pact Contracts to Broker
-        if: success()
-        run: |
-          mvn pact:publish -Dpact.pactBrokerUrl=${{ secrets.PACT_BROKER_URL }} -Dpact.pactBrokerToken=${{ secrets.PACT_BROKER_TOKEN }}
+        if: success() && env.PACT_BROKER_URL != ''
+        run: mvn -B pact:publish -Dpact.pactBrokerUrl="$PACT_BROKER_URL" -Dpact.pactBrokerToken="$PACT_BROKER_TOKEN"
 
   publish-telemetry-report:
     needs: execute-test-framework
     runs-on: ubuntu-latest
-    if: always()
+    # Publish for main-branch pushes even when tests fail (that is when the report
+    # matters most), but never from pull requests.
+    if: always() && github.event_name != 'pull_request' && needs.execute-test-framework.result != 'cancelled'
+    permissions:
+      contents: write
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-        
       - name: Download Raw Allure Results
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: allure-results
           path: allure-results
+
+      - name: Fetch Previous Report History
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: gh-pages
+          path: gh-pages
 
       - name: Compile Allure HTML Report
         uses: simple-elf/allure-report-action@master
         with:
           allure_results: allure-results
+          gh_pages: gh-pages
           allure_history: allure-history
+          keep_reports: 20
 
       - name: Deploy Report to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
