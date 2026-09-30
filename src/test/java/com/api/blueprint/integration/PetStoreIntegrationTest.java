@@ -1,68 +1,69 @@
 package com.api.blueprint.integration;
 
 import com.api.blueprint.config.ApiConfig;
-import com.api.blueprint.models.Category;
+import com.api.blueprint.integration.support.PetStoreFixture;
 import com.api.blueprint.models.Order;
 import com.api.blueprint.models.Pet;
 import com.api.blueprint.models.User;
 import io.qameta.allure.*;
-import io.restassured.response.Response;
-import org.junit.jupiter.api.MethodOrderer;
+import io.restassured.path.json.JsonPath;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestMethodOrder;
 
-import java.util.Collections;
 import java.util.List;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
+/**
+ * Integration tests against the Swagger Petstore.
+ *
+ * <p>Each test builds the data it needs through {@link PetStoreFixture} and the fixture removes
+ * it afterwards, so any test can run alone, in any order, and a failure points at the
+ * operation that broke rather than at an earlier test in a chain.
+ */
 @Epic("Inventory Management System")
 @Feature("Pet Lifecycle Operations")
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class PetStoreIntegrationTest {
 
-    private static Long dynamicPetId;
-    private static String authToken;
-    private static Long dynamicOrderId;
-    private static String testUsername = "quality_eng_user";
+    private final PetStoreFixture fixture = new PetStoreFixture();
 
-    // --- Core Chained Workflow (Tests 1 to 7) ---
+    @AfterEach
+    void removeTestData() {
+        fixture.cleanUp();
+    }
+
+    // --- Pet lifecycle ---
 
     @Test
-    @org.junit.jupiter.api.Order(1)
     @Story("As an API client, I can authenticate to get a session token")
     @Severity(SeverityLevel.BLOCKER)
-    @Description("Authenticates via user/login endpoint and extracts the auth message token.")
+    @Description("Authenticates via user/login and checks that a session token message is returned.")
     public void authenticate_ShouldReturnValidToken() {
-        Response response = given()
+        given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .queryParam("username", "testuser")
+                .queryParam("username", PetStoreFixture.uniqueUsername("login"))
                 .queryParam("password", "securepassword")
         .when()
                 .get("/user/login")
         .then()
                 .spec(ApiConfig.getBaseResponseSpec())
                 .statusCode(200)
-                .body("message", notNullValue())
-                .extract().response();
-
-        authToken = response.path("message"); 
+                .body("message", containsString("logged in user session"));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(2)
     @Story("As an administrator, I can create a new pet")
     @Severity(SeverityLevel.CRITICAL)
-    @Description("Creates a new pet record using POST request and verifies it returns status 200.")
-    public void createPet_ShouldReturnCreatedStatus() {
-        Category category = new Category(1, "Dogs");
-        Pet newPet = new Pet(null, category, "Maximus", new String[]{"http://image.url"}, Collections.emptyList(), "available");
+    @Description("Creates a pet with POST and verifies the stored record echoes the request.")
+    public void createPet_ShouldReturnCreatedPet() {
+        Pet pet = fixture.newPet("Maximus", "available");
+        fixture.trackPet(pet.getId());
 
-        Response response = given()
+        JsonPath created = given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .header("api_key", authToken != null ? authToken : "mock_token")
-                .body(newPet)
+                .body(pet)
         .when()
                 .post("/pet")
         .then()
@@ -70,66 +71,61 @@ public class PetStoreIntegrationTest {
                 .statusCode(200)
                 .body("name", equalTo("Maximus"))
                 .body("status", equalTo("available"))
-                .extract().response();
+                .extract().jsonPath();
 
-        dynamicPetId = response.path("id");
+        assertThat(created.getLong("id"), equalTo(pet.getId()));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(3)
     @Story("As an administrator, I can retrieve pet details by ID")
     @Severity(SeverityLevel.CRITICAL)
-    @Description("Retrieves the newly created pet details using GET path parameter and verifies fields.")
-    public void getPet_ShouldReturnPreviouslyCreatedPet() {
-        if (dynamicPetId == null) {
-            dynamicPetId = 9912345L; // Safe fallback
-        }
-        given()
-                .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("petId", dynamicPetId)
-        .when()
-                .get("/pet/{petId}")
+    @Description("Retrieves a freshly created pet by id and verifies its fields.")
+    public void getPet_ShouldReturnExistingPet() {
+        Pet pet = fixture.givenPet("Maximus", "available");
+
+        JsonPath fetched = fixture.getWhenStatus(200, "/pet/{petId}", pet.getId())
         .then()
                 .spec(ApiConfig.getBaseResponseSpec())
                 .statusCode(200)
                 .body("name", equalTo("Maximus"))
-                .body("status", equalTo("available"));
+                .body("status", equalTo("available"))
+                .extract().jsonPath();
+
+        assertThat(fetched.getLong("id"), equalTo(pet.getId()));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(4)
     @Story("As an administrator, I can update a pet's details")
     @Severity(SeverityLevel.NORMAL)
-    @Description("Performs a PUT request to update the pet's name to Maximus II and status to pending.")
+    @Description("Updates a pet's name and status with PUT and verifies the response.")
     public void updatePet_ShouldModifyStatusAndName() {
-        if (dynamicPetId == null) {
-            dynamicPetId = 9912345L;
-        }
-        Category category = new Category(1, "Dogs");
-        Pet updatedPet = new Pet(dynamicPetId, category, "Maximus II", new String[]{"http://image.url"}, Collections.emptyList(), "pending");
+        Pet pet = fixture.givenPet("Maximus", "available");
+        pet.setName("Maximus II");
+        pet.setStatus("pending");
 
-        given()
+        JsonPath updated = given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .body(updatedPet)
+                .body(pet)
         .when()
                 .put("/pet")
         .then()
                 .spec(ApiConfig.getBaseResponseSpec())
                 .statusCode(200)
                 .body("name", equalTo("Maximus II"))
-                .body("status", equalTo("pending"));
+                .body("status", equalTo("pending"))
+                .extract().jsonPath();
+
+        assertThat(updated.getLong("id"), equalTo(pet.getId()));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(5)
     @Story("As an API client, I can find pets by status filter")
     @Severity(SeverityLevel.NORMAL)
-    @Description("Queries pet store by status 'pending' and verifies the updated pet exists in findings.")
-    public void findPetByStatus_ShouldContainUpdatedPet() {
-        if (dynamicPetId == null) {
-            dynamicPetId = 9912345L;
-        }
-        given()
+    @Description("Creates a pending pet and verifies findByStatus=pending lists it.")
+    public void findPetByStatus_ShouldContainPendingPet() {
+        Pet pet = fixture.givenPet("Maximus", "pending");
+
+        List<Long> pendingIds = given()
                 .spec(ApiConfig.getBaseRequestSpec())
                 .queryParam("status", "pending")
         .when()
@@ -137,51 +133,51 @@ public class PetStoreIntegrationTest {
         .then()
                 .spec(ApiConfig.getBaseResponseSpec())
                 .statusCode(200)
-                .body("id", hasItem(dynamicPetId));
+                .extract().jsonPath().getList("id", Long.class);
+
+        assertThat(pendingIds, hasItem(pet.getId()));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(6)
     @Story("As an administrator, I can delete a pet")
     @Severity(SeverityLevel.CRITICAL)
-    @Description("Sends a DELETE request with api_key header to purge the pet record.")
+    @Description("Deletes a pet with the api_key header and verifies the deleted id is echoed.")
     public void deletePet_ShouldPurgePetFromDatabase() {
-        if (dynamicPetId == null) {
-            dynamicPetId = 9912345L;
-        }
+        Pet pet = fixture.givenPet("Maximus", "available");
+
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .header("api_key", authToken != null ? authToken : "mock_token")
-                .pathParam("petId", dynamicPetId)
+                .header("api_key", PetStoreFixture.API_KEY)
+                .pathParam("petId", pet.getId())
         .when()
                 .delete("/pet/{petId}")
         .then()
                 .statusCode(200)
-                .body("message", equalTo(String.valueOf(dynamicPetId)));
+                .body("message", equalTo(String.valueOf(pet.getId())));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(7)
     @Story("As a client, retrieving a deleted pet returns 404 error")
     @Severity(SeverityLevel.NORMAL)
-    @Description("Verifies GET on a deleted pet returns HTTP 404 Not Found.")
+    @Description("Deletes a pet and verifies a subsequent GET returns HTTP 404 Not Found.")
     public void getPet_ShouldReturn404AfterDeletion() {
-        if (dynamicPetId == null) {
-            dynamicPetId = 9912345L;
-        }
+        Pet pet = fixture.givenPet("Maximus", "available");
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("petId", dynamicPetId)
+                .header("api_key", PetStoreFixture.API_KEY)
         .when()
-                .get("/pet/{petId}")
+                .delete("/pet/{petId}", pet.getId())
+        .then()
+                .statusCode(200);
+
+        fixture.getWhenStatus(404, "/pet/{petId}", pet.getId())
         .then()
                 .statusCode(404);
     }
 
-    // --- Isolated API Endpoints & Business Rule Verification (Tests 8 to 30) ---
+    // --- Pet error handling and inventory ---
 
     @Test
-    @org.junit.jupiter.api.Order(8)
     @Story("Validate error handling on invalid non-numeric ID format")
     public void getPet_WithInvalidIdFormat_ShouldReturn400() {
         given()
@@ -194,12 +190,11 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Order(9)
     @Story("Validate 404 code on non-existent pet ID retrieval")
     public void getPet_WithNonExistentId_ShouldReturn404() {
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("petId", 99999998888777L)
+                .pathParam("petId", PetStoreFixture.uniqueId())
         .when()
                 .get("/pet/{petId}")
         .then()
@@ -207,7 +202,6 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Order(10)
     @Story("Verify that inventory retrieval returns active numbers")
     public void getInventory_ShouldReturnActiveQuantities() {
         given()
@@ -220,52 +214,51 @@ public class PetStoreIntegrationTest {
                 .body("available", anyOf(nullValue(), is(instanceOf(Integer.class))));
     }
 
+    // --- Store orders ---
+
     @Test
-    @org.junit.jupiter.api.Order(11)
     @Story("Verify placing an order returns 200 details")
     public void placeOrder_ShouldSucceed() {
-        Order order = new Order(null, 12L, 5, "2026-07-15T19:43:58.000Z", "placed", false);
-        Response response = given()
+        Order order = fixture.newOrder();
+        fixture.trackOrder(order.getId());
+
+        JsonPath placed = given()
                 .spec(ApiConfig.getBaseRequestSpec())
                 .body(order)
         .when()
                 .post("/store/order")
         .then()
                 .statusCode(200)
-                .body("petId", equalTo(12))
                 .body("quantity", equalTo(5))
                 .body("status", equalTo("placed"))
                 .body("complete", equalTo(false))
-                .extract().response();
+                .extract().jsonPath();
 
-        dynamicOrderId = response.path("id");
+        assertThat(placed.getLong("id"), equalTo(order.getId()));
+        assertThat(placed.getLong("petId"), equalTo(order.getPetId()));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(12)
-    @Story("Retrieve active order details by dynamic ID")
+    @Story("Retrieve active order details by ID")
     public void getOrder_ShouldMatchCreatedDetails() {
-        if (dynamicOrderId == null) {
-            dynamicOrderId = 1L;
-        }
-        given()
-                .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("orderId", dynamicOrderId)
-        .when()
-                .get("/store/order/{orderId}")
+        Order order = fixture.givenOrder();
+
+        JsonPath fetched = fixture.getWhenStatus(200, "/store/order/{orderId}", order.getId())
         .then()
                 .statusCode(200)
-                .body("id", equalTo(dynamicOrderId))
-                .body("status", anyOf(equalTo("placed"), is(notNullValue())));
+                .body("status", equalTo("placed"))
+                .extract().jsonPath();
+
+        assertThat(fetched.getLong("id"), equalTo(order.getId()));
+        assertThat(fetched.getLong("petId"), equalTo(order.getPetId()));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(13)
     @Story("Validate error handling on retrieving order with non-existent ID")
     public void getOrder_WithNonExistentId_ShouldReturn404() {
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("orderId", 999888222111L)
+                .pathParam("orderId", PetStoreFixture.uniqueId())
         .when()
                 .get("/store/order/{orderId}")
         .then()
@@ -273,15 +266,13 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Order(14)
-    @Story("Delete active order details and verify state")
+    @Story("Delete an order")
     public void deleteOrder_ShouldSucceed() {
-        if (dynamicOrderId == null) {
-            dynamicOrderId = 1L;
-        }
+        Order order = fixture.givenOrder();
+
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("orderId", dynamicOrderId)
+                .pathParam("orderId", order.getId())
         .when()
                 .delete("/store/order/{orderId}")
         .then()
@@ -289,26 +280,41 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Order(15)
     @Story("Verifies GET on a deleted order returns HTTP 404 Not Found.")
     public void getOrder_ShouldReturn404AfterDeletion() {
-        if (dynamicOrderId == null) {
-            dynamicOrderId = 1L;
-        }
+        Order order = fixture.givenOrder();
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("orderId", dynamicOrderId)
         .when()
-                .get("/store/order/{orderId}")
+                .delete("/store/order/{orderId}", order.getId())
+        .then()
+                .statusCode(200);
+
+        fixture.getWhenStatus(404, "/store/order/{orderId}", order.getId())
         .then()
                 .statusCode(404);
     }
 
     @Test
-    @org.junit.jupiter.api.Order(16)
+    @Story("Verify deletion of non-existent order returns 404")
+    public void deleteOrder_NonExistent_ShouldReturn404() {
+        given()
+                .spec(ApiConfig.getBaseRequestSpec())
+                .pathParam("orderId", PetStoreFixture.uniqueId())
+        .when()
+                .delete("/store/order/{orderId}")
+        .then()
+                .statusCode(404);
+    }
+
+    // --- Users ---
+
+    @Test
     @Story("Create new user record successfully")
     public void createUser_ShouldSucceed() {
-        User user = new User(101L, testUsername, "QA", "Tester", "qa@test.com", "pass123", "555-5555", 1);
+        User user = fixture.newUser();
+        fixture.trackUser(user.getUsername());
+
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
                 .body(user)
@@ -319,28 +325,26 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Order(17)
     @Story("Get created user profile by username")
     public void getUser_ShouldReturnProfile() {
-        given()
-                .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("username", testUsername)
-        .when()
-                .get("/user/{username}")
+        User user = fixture.givenUser();
+
+        fixture.getWhenStatus(200, "/user/{username}", user.getUsername())
         .then()
                 .statusCode(200)
-                .body("username", equalTo(testUsername))
-                .body("email", equalTo("qa@test.com"));
+                .body("username", equalTo(user.getUsername()))
+                .body("email", equalTo(user.getEmail()));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(18)
     @Story("Update user profile record")
     public void updateUser_ShouldSucceed() {
-        User user = new User(101L, testUsername, "QA_Updated", "Tester_Updated", "qa_new@test.com", "pass123", "555-5555", 2);
+        User user = fixture.givenUser();
+        user.setFirstName("QA_Updated");
+
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("username", testUsername)
+                .pathParam("username", user.getUsername())
                 .body(user)
         .when()
                 .put("/user/{username}")
@@ -349,22 +353,27 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Order(19)
     @Story("Verify profile updates took effect")
     public void getUser_AfterUpdate_ShouldContainNewDetails() {
+        User user = fixture.givenUser();
+        user.setFirstName("QA_Updated");
+        user.setEmail("updated_" + user.getEmail());
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("username", testUsername)
+                .body(user)
         .when()
-                .get("/user/{username}")
+                .put("/user/{username}", user.getUsername())
+        .then()
+                .statusCode(200);
+
+        fixture.getWhenStatus(200, "/user/{username}", user.getUsername())
         .then()
                 .statusCode(200)
                 .body("firstName", equalTo("QA_Updated"))
-                .body("email", equalTo("qa_new@test.com"));
+                .body("email", equalTo(user.getEmail()));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(20)
     @Story("Logs user out of system session")
     public void logoutUser_ShouldSucceed() {
         given()
@@ -377,12 +386,13 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Order(21)
     @Story("Delete user account from system")
     public void deleteUser_ShouldSucceed() {
+        User user = fixture.givenUser();
+
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("username", testUsername)
+                .pathParam("username", user.getUsername())
         .when()
                 .delete("/user/{username}")
         .then()
@@ -390,25 +400,27 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Order(22)
     @Story("Verify deleted user profile can no longer be retrieved")
     public void getUser_AfterDeletion_ShouldReturn404() {
+        User user = fixture.givenUser();
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("username", testUsername)
         .when()
-                .get("/user/{username}")
+                .delete("/user/{username}", user.getUsername())
+        .then()
+                .statusCode(200);
+
+        fixture.getWhenStatus(404, "/user/{username}", user.getUsername())
         .then()
                 .statusCode(404);
     }
 
     @Test
-    @org.junit.jupiter.api.Order(23)
     @Story("Get non-existent user profile returns 404")
     public void getUser_NonExistent_ShouldReturn404() {
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("username", "some_completely_random_user_12345")
+                .pathParam("username", PetStoreFixture.uniqueUsername("missing"))
         .when()
                 .get("/user/{username}")
         .then()
@@ -416,59 +428,50 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Order(24)
     @Story("Create list of users at once using createWithList")
-    public void createUsersWithList_ShouldSucceed() {
-        List<User> list = List.of(
-                new User(102L, "list_u1", "L", "1", "l1@t.com", "p1", "11", 1),
-                new User(103L, "list_u2", "L", "2", "l2@t.com", "p2", "22", 1)
-        );
+    public void createUsersWithList_ShouldCreateEveryUser() {
+        List<User> users = List.of(fixture.newUser(), fixture.newUser());
+        users.forEach(user -> fixture.trackUser(user.getUsername()));
 
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .body(list)
+                .body(users)
         .when()
                 .post("/user/createWithList")
         .then()
                 .statusCode(200);
+
+        users.forEach(user -> fixture.getWhenStatus(200, "/user/{username}", user.getUsername())
+                .then()
+                .statusCode(200)
+                .body("username", equalTo(user.getUsername())));
     }
 
     @Test
-    @org.junit.jupiter.api.Order(25)
     @Story("Create array of users at once using createWithArray")
-    public void createUsersWithArray_ShouldSucceed() {
-        User[] arr = {
-                new User(104L, "arr_u1", "A", "1", "a1@t.com", "p1", "11", 1),
-                new User(105L, "arr_u2", "A", "2", "a2@t.com", "p2", "22", 1)
-        };
+    public void createUsersWithArray_ShouldCreateEveryUser() {
+        User[] users = {fixture.newUser(), fixture.newUser()};
+        for (User user : users) {
+            fixture.trackUser(user.getUsername());
+        }
 
         given()
                 .spec(ApiConfig.getBaseRequestSpec())
-                .body(arr)
+                .body(users)
         .when()
                 .post("/user/createWithArray")
         .then()
                 .statusCode(200);
+
+        for (User user : users) {
+            fixture.getWhenStatus(200, "/user/{username}", user.getUsername())
+            .then()
+                    .statusCode(200)
+                    .body("username", equalTo(user.getUsername()));
+        }
     }
 
     @Test
-    @org.junit.jupiter.api.Order(26)
-    @Story("Delete list users to restore environment state")
-    public void cleanUpListUsers() {
-        given().spec(ApiConfig.getBaseRequestSpec()).pathParam("username", "list_u1").when().delete("/user/{username}").then().statusCode(200);
-        given().spec(ApiConfig.getBaseRequestSpec()).pathParam("username", "list_u2").when().delete("/user/{username}").then().statusCode(200);
-    }
-
-    @Test
-    @org.junit.jupiter.api.Order(27)
-    @Story("Delete array users to restore environment state")
-    public void cleanUpArrayUsers() {
-        given().spec(ApiConfig.getBaseRequestSpec()).pathParam("username", "arr_u1").when().delete("/user/{username}").then().statusCode(200);
-        given().spec(ApiConfig.getBaseRequestSpec()).pathParam("username", "arr_u2").when().delete("/user/{username}").then().statusCode(200);
-    }
-
-    @Test
-    @org.junit.jupiter.api.Order(28)
     @Story("Perform login with blank username should trigger 400")
     public void loginUser_WithBlankParams_ShouldReturn200Or400() {
         // Swagger Petstore is relaxed on blank parameters, so we accept success or validation exception.
@@ -483,7 +486,6 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Order(29)
     @Story("Validate invalid method type on inventory retrieval")
     public void getInventory_WithInvalidMethodPOST_ShouldReturn405() {
         given()
@@ -492,18 +494,5 @@ public class PetStoreIntegrationTest {
                 .post("/store/inventory")
         .then()
                 .statusCode(anyOf(equalTo(405), equalTo(404))); // standard endpoint handling
-    }
-
-    @Test
-    @org.junit.jupiter.api.Order(30)
-    @Story("Verify deletion of non-existent order returns 404")
-    public void deleteOrder_NonExistent_ShouldReturn404() {
-        given()
-                .spec(ApiConfig.getBaseRequestSpec())
-                .pathParam("orderId", 999222333000L)
-        .when()
-                .delete("/store/order/{orderId}")
-        .then()
-                .statusCode(404);
     }
 }
