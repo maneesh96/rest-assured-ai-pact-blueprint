@@ -1,8 +1,5 @@
 package com.api.blueprint.ai;
 
-import io.restassured.RestAssured;
-import io.restassured.http.ContentType;
-import io.restassured.response.Response;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -11,9 +8,6 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 
 public class SchemaDriftDetector {
-
-    private static final String CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
-    private static final String API_KEY = System.getenv("ANTHROPIC_API_KEY");
 
     public static void main(String[] args) {
         String baselineSpecPath = "src/test/resources/schemas/petstore-openapi.yaml";
@@ -57,41 +51,15 @@ public class SchemaDriftDetector {
 
         JSONArray breakingChanges = null;
 
-        // Query LLM if API key is provided, else run offline/fallback logic
-        if (API_KEY != null && !API_KEY.isBlank() && !API_KEY.equals("your-api-key")) {
-            System.out.println("Querying Claude API for semantic schema drift detection...");
-            try {
-                String prompt = "Act as an API Governance tool. Compare the baseline OpenAPI spec with the current spec. " +
-                        "Identify ONLY backward-incompatible breaking changes (e.g., removed required fields, changed data types, removed endpoints). " +
-                        "Return the result as a strict JSON array of objects with keys: 'endpoint', 'changeType', 'description'. " +
-                        "Return an empty array if no breaking changes exist. \n\n" +
-                        "Baseline:\n" + baselineSpec + "\n\nCurrent:\n" + currentSpec;
-
-                Response response = RestAssured.given()
-                        .baseUri(CLAUDE_API_URL)
-                        .header("x-api-key", API_KEY)
-                        .header("anthropic-version", "2023-06-01")
-                        .contentType(ContentType.JSON)
-                        .body(buildClaudePayload(prompt))
-                        .post();
-
-                if (response.statusCode() == 200) {
-                    String content = response.jsonPath().getString("content[0].text");
-                    // Clean up markdown markers if Claude returns them
-                    if (content.contains("```json")) {
-                        content = content.substring(content.indexOf("```json") + 7);
-                        content = content.substring(0, content.lastIndexOf("```"));
-                    } else if (content.contains("```")) {
-                        content = content.substring(content.indexOf("```") + 3);
-                        content = content.substring(0, content.lastIndexOf("```"));
-                    }
-                    breakingChanges = new JSONArray(content.trim());
-                } else {
-                    System.err.println("Claude API returned error code " + response.statusCode() + ": " + response.asString());
-                }
-            } catch (Exception e) {
-                System.err.println("Failed to contact Claude API. Falling back to basic local verification: " + e.getMessage());
-            }
+        ClaudeClient claude = ClaudeClient.fromEnvironment();
+        if (claude.isConfigured()) {
+            System.out.println("Querying Claude (" + claude.getModel() + ") for semantic schema drift detection...");
+            String prompt = "Act as an API Governance tool. Compare the baseline OpenAPI spec with the current spec. " +
+                    "Identify ONLY backward-incompatible breaking changes (e.g., removed required fields, changed data types, removed endpoints). " +
+                    "Return the result as a strict JSON array of objects with keys: 'endpoint', 'changeType', 'description'. " +
+                    "Return an empty array if no breaking changes exist. \n\n" +
+                    "Baseline:\n" + baselineSpec + "\n\nCurrent:\n" + currentSpec;
+            breakingChanges = claude.completeAsJsonArray(prompt).orElse(null);
         }
 
         // Offline / Fallback verification
@@ -105,19 +73,6 @@ public class SchemaDriftDetector {
             throw new RuntimeException("CRITICAL: AI Schema Drift Detector flagged breaking changes. Halting test execution. " + 
                                        "Details: \n" + breakingChanges.toString(2));
         }
-    }
-
-    private static String buildClaudePayload(String prompt) {
-        JSONObject body = new JSONObject();
-        body.put("model", "claude-3-5-sonnet-20241022");
-        body.put("max_tokens", 4096);
-        JSONArray messages = new JSONArray();
-        JSONObject message = new JSONObject();
-        message.put("role", "user");
-        message.put("content", prompt);
-        messages.put(message);
-        body.put("messages", messages);
-        return body.toString();
     }
 
     /**
