@@ -68,6 +68,30 @@ jobs:
         if: success() && env.PACT_BROKER_URL != ''
         run: mvn -B pact:publish -Dpact.pactBrokerUrl="$PACT_BROKER_URL" -Dpact.pactBrokerToken="$PACT_BROKER_TOKEN"
 
+  # Tests tagged "known-defect" assert spec behaviour the live petstore does not
+  # meet yet. They run on their own so the main suite and the Allure report stay
+  # green, and the job page lists which defects still reproduce.
+  known-defects:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v5
+
+      - name: Provision Java Development Kit 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run Known-Defect Tests (expected to fail)
+        continue-on-error: true
+        run: mvn -B test -Pknown-defects
+
+      - name: Summarise Known Defects
+        run: python3 .github/scripts/report_known_defects.py
+
   publish-telemetry-report:
     needs: execute-test-framework
     runs-on: ubuntu-latest

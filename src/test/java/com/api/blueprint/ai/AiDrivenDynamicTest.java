@@ -3,8 +3,8 @@ package com.api.blueprint.ai;
 import com.api.blueprint.config.ApiConfig;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestFactory;
 
 import java.io.File;
@@ -19,13 +19,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * Generates adversarial POST /pet cases from the OpenAPI spec with Claude, or
  * from a fixed offline set when no API key is configured.
+ *
+ * <p>Offline cases that send input the spec forbids live in a separate factory
+ * tagged "known-defect": they expect 400, the live petstore accepts them, and
+ * they are excluded from the default run (see KNOWN_DEFECTS.md).
  */
 public class AiDrivenDynamicTest {
 
     @TestFactory
-    public Collection<DynamicTest> generateIntelligentTestsFromSpec() throws Exception {
-        Collection<DynamicTest> dynamicTests = new ArrayList<>();
-
+    public Collection<DynamicTest> generateIntelligentTestsFromSpec() {
         // 1. Resolve path to OpenAPI spec
         String specPath = "src/test/resources/schemas/petstore-openapi.yaml";
         File specFile = new File(specPath);
@@ -59,15 +61,24 @@ public class AiDrivenDynamicTest {
             generatedTestsArray = getFallbackTestCases();
         }
 
-        // 4. Map test cases to JUnit 5 Dynamic Tests
-        for (int i = 0; i < generatedTestsArray.length(); i++) {
-            JSONObject testCase = generatedTestsArray.getJSONObject(i);
+        return toDynamicTests("AI Generated (Dynamic): ", generatedTestsArray);
+    }
+
+    @Tag("known-defect")
+    @TestFactory
+    public Collection<DynamicTest> specViolationsMustBeRejected() {
+        return toDynamicTests("Spec violation (Dynamic): ", getSpecViolationTestCases());
+    }
+
+    private static Collection<DynamicTest> toDynamicTests(String prefix, JSONArray testCases) {
+        Collection<DynamicTest> dynamicTests = new ArrayList<>();
+        for (int i = 0; i < testCases.length(); i++) {
+            JSONObject testCase = testCases.getJSONObject(i);
             String testName = testCase.getString("testName");
             JSONObject payload = testCase.getJSONObject("payload");
             int expectedStatus = testCase.getInt("expectedStatusCode");
-            String knownDefect = testCase.optString("knownDefect", null);
 
-            DynamicTest test = DynamicTest.dynamicTest("AI Generated (Dynamic): " + testName, () -> {
+            dynamicTests.add(DynamicTest.dynamicTest(prefix + testName, () -> {
                 int actualStatus = given()
                         .spec(ApiConfig.getBaseRequestSpec())
                         .body(payload.toString())
@@ -76,24 +87,16 @@ public class AiDrivenDynamicTest {
                 .then()
                         .extract().statusCode();
 
-                // A spec violation the live API is known to accept is reported as
-                // aborted (never as passed) with the observed status, so the gap stays visible.
-                if (knownDefect != null && actualStatus != expectedStatus) {
-                    Assumptions.abort("Known defect: " + knownDefect + " Expected HTTP " + expectedStatus
-                            + " per the OpenAPI spec, got " + actualStatus + ".");
-                }
                 assertEquals(expectedStatus, actualStatus, "Unexpected HTTP status for: " + testName);
-            });
-            dynamicTests.add(test);
+            }));
         }
-
         return dynamicTests;
     }
 
     private JSONArray getFallbackTestCases() {
         JSONArray cases = new JSONArray();
 
-        // Case 1: Extreme String Injection (SQL Injection characters)
+        // Extreme String Injection (SQL Injection characters)
         JSONObject payload1 = new JSONObject()
                 .put("id", 999901)
                 .put("name", "Maximus'; DROP TABLE pets;--")
@@ -104,30 +107,7 @@ public class AiDrivenDynamicTest {
                 .put("payload", payload1)
                 .put("expectedStatusCode", 200));
 
-        // Case 2: Validation Failure - Missing required fields (Name is required in schema)
-        JSONObject payload2 = new JSONObject()
-                .put("id", 999902)
-                .put("photoUrls", new JSONArray().put("http://example.com/image.jpg"))
-                .put("status", "available");
-        cases.put(new JSONObject()
-                .put("testName", "Missing Required Name Field")
-                .put("payload", payload2)
-                .put("expectedStatusCode", 400)
-                .put("knownDefect", "The petstore accepts a pet without the required 'name'."));
-
-        // Case 3: Invalid Array Data Type
-        JSONObject payload3 = new JSONObject()
-                .put("id", 999903)
-                .put("name", "Rex")
-                .put("photoUrls", "not_an_array")
-                .put("status", "available");
-        cases.put(new JSONObject()
-                .put("testName", "Invalid Data Type - photoUrls String instead of Array")
-                .put("payload", payload3)
-                .put("expectedStatusCode", 400)
-                .put("knownDefect", "The petstore does not reject a non-array 'photoUrls' with 400."));
-
-        // Case 4: Custom Category Object with Negative Category ID
+        // Custom Category Object with Negative Category ID
         JSONObject categoryJson = new JSONObject()
                 .put("id", -1)
                 .put("name", "Feline");
@@ -142,7 +122,7 @@ public class AiDrivenDynamicTest {
                 .put("payload", payload4)
                 .put("expectedStatusCode", 200));
 
-        // Case 5: Extremely Long Pet Name (Overflow Boundary Test)
+        // Extremely Long Pet Name (Overflow Boundary Test)
         StringBuilder longName = new StringBuilder();
         for (int i = 0; i < 500; i++) {
             longName.append("a");
@@ -157,7 +137,7 @@ public class AiDrivenDynamicTest {
                 .put("payload", payload5)
                 .put("expectedStatusCode", 200));
 
-        // Case 6: Empty photoUrls array
+        // Empty photoUrls array
         JSONObject payload6 = new JSONObject()
                 .put("id", 999906)
                 .put("name", "NoPhotoPet")
@@ -168,19 +148,7 @@ public class AiDrivenDynamicTest {
                 .put("payload", payload6)
                 .put("expectedStatusCode", 200));
 
-        // Case 7: Invalid status enum value
-        JSONObject payload7 = new JSONObject()
-                .put("id", 999907)
-                .put("name", "EnumTestPet")
-                .put("photoUrls", new JSONArray().put("http://example.com/image.jpg"))
-                .put("status", "super-available");
-        cases.put(new JSONObject()
-                .put("testName", "Invalid Status Enum value validation")
-                .put("payload", payload7)
-                .put("expectedStatusCode", 400)
-                .put("knownDefect", "The petstore accepts a 'status' outside the declared enum."));
-
-        // Case 8: Large ID value (Long boundary test)
+        // Large ID value (Long boundary test)
         JSONObject payload8 = new JSONObject()
                 .put("id", 9223372036854775807L)
                 .put("name", "HugeIdPet")
@@ -191,19 +159,7 @@ public class AiDrivenDynamicTest {
                 .put("payload", payload8)
                 .put("expectedStatusCode", 200));
 
-        // Case 9: SQL syntax injection in status field
-        JSONObject payload9 = new JSONObject()
-                .put("id", 999909)
-                .put("name", "SafeName")
-                .put("photoUrls", new JSONArray().put("http://example.com/image.jpg"))
-                .put("status", "sold; UPDATE pet SET name='hacked'");
-        cases.put(new JSONObject()
-                .put("testName", "SQL Injection in Enum Status Field")
-                .put("payload", payload9)
-                .put("expectedStatusCode", 400)
-                .put("knownDefect", "The petstore accepts a 'status' outside the declared enum."));
-
-        // Case 10: Nested tags list validation with missing tag name
+        // Nested tags list validation with missing tag name
         JSONArray tagsJson = new JSONArray();
         tagsJson.put(new JSONObject().put("id", 5));
         JSONObject payload10 = new JSONObject()
@@ -216,6 +172,57 @@ public class AiDrivenDynamicTest {
                 .put("testName", "Missing tag name in nested tags array")
                 .put("payload", payload10)
                 .put("expectedStatusCode", 200));
+
+        return cases;
+    }
+
+    // Input the OpenAPI spec forbids: "name" and "photoUrls" are required, photoUrls is
+    // an array and status is an enum. The spec answers 400 "Invalid input" for these.
+    private static JSONArray getSpecViolationTestCases() {
+        JSONArray cases = new JSONArray();
+
+        // Validation Failure - Missing required fields (Name is required in schema)
+        JSONObject payload2 = new JSONObject()
+                .put("id", 999902)
+                .put("photoUrls", new JSONArray().put("http://example.com/image.jpg"))
+                .put("status", "available");
+        cases.put(new JSONObject()
+                .put("testName", "Missing Required Name Field")
+                .put("payload", payload2)
+                .put("expectedStatusCode", 400));
+
+        // Invalid Array Data Type
+        JSONObject payload3 = new JSONObject()
+                .put("id", 999903)
+                .put("name", "Rex")
+                .put("photoUrls", "not_an_array")
+                .put("status", "available");
+        cases.put(new JSONObject()
+                .put("testName", "Invalid Data Type - photoUrls String instead of Array")
+                .put("payload", payload3)
+                .put("expectedStatusCode", 400));
+
+        // Invalid status enum value
+        JSONObject payload7 = new JSONObject()
+                .put("id", 999907)
+                .put("name", "EnumTestPet")
+                .put("photoUrls", new JSONArray().put("http://example.com/image.jpg"))
+                .put("status", "super-available");
+        cases.put(new JSONObject()
+                .put("testName", "Invalid Status Enum value validation")
+                .put("payload", payload7)
+                .put("expectedStatusCode", 400));
+
+        // SQL syntax injection in status field
+        JSONObject payload9 = new JSONObject()
+                .put("id", 999909)
+                .put("name", "SafeName")
+                .put("photoUrls", new JSONArray().put("http://example.com/image.jpg"))
+                .put("status", "sold; UPDATE pet SET name='hacked'");
+        cases.put(new JSONObject()
+                .put("testName", "SQL Injection in Enum Status Field")
+                .put("payload", payload9)
+                .put("expectedStatusCode", 400));
 
         return cases;
     }

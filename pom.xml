@@ -17,6 +17,11 @@
         <allure.version>2.25.0</allure.version>
         <jackson.version>2.16.1</jackson.version>
         <aspectj.version>1.9.21</aspectj.version>
+        <!-- JUnit 5 tag expressions for Surefire. Tests tagged "known-defect" assert
+             spec behaviour the live API does not meet yet (see KNOWN_DEFECTS.md),
+             so the default run leaves them out. -->
+        <test.groups></test.groups>
+        <test.excludedGroups>known-defect</test.excludedGroups>
     </properties>
 
     <dependencies>
@@ -120,6 +125,8 @@
                     <argLine>
                         -javaagent:"${settings.localRepository}/org/aspectj/aspectjweaver/${aspectj.version}/aspectjweaver-${aspectj.version}.jar"
                     </argLine>
+                    <groups>${test.groups}</groups>
+                    <excludedGroups>${test.excludedGroups}</excludedGroups>
                     <systemPropertyVariables>
                         <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
                     </systemPropertyVariables>
@@ -154,4 +161,16 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- mvn test -Pknown-defects: run only the known-defect tests. They are
+             expected to fail until the API is fixed. -->
+        <profile>
+            <id>known-defects</id>
+            <properties>
+                <test.groups>known-defect</test.groups>
+                <test.excludedGroups></test.excludedGroups>
+            </properties>
+        </profile>
+    </profiles>
 </project>
