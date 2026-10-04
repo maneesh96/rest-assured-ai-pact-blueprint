@@ -5,6 +5,7 @@ import com.api.blueprint.models.Category;
 import com.api.blueprint.models.Order;
 import com.api.blueprint.models.Pet;
 import com.api.blueprint.models.User;
+import com.api.blueprint.support.TestTags;
 import io.restassured.response.Response;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -20,6 +21,7 @@ import java.util.stream.Stream;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
+@Tag(TestTags.REGRESSION)
 public class PetStoreDdtTest {
 
     // Cases tagged "known-defect" send input the OpenAPI spec forbids. They assert
@@ -47,7 +49,7 @@ public class PetStoreDdtTest {
                 .body("$", is(notNullValue()));
     }
 
-    @Tag("known-defect")
+    @Tag(TestTags.KNOWN_DEFECT)
     @ParameterizedTest(name = "DDT-Status: Querying status ''{0}'' should be rejected with {1}")
     @CsvSource({
             "unknown, 400",
@@ -77,7 +79,7 @@ public class PetStoreDdtTest {
         createPet(petPayload, expectedStatusCode);
     }
 
-    @Tag("known-defect")
+    @Tag(TestTags.KNOWN_DEFECT)
     @ParameterizedTest(name = "DDT-Pet: Creating pet ''{0}'' without a required field should return status {2}")
     @MethodSource("provideInvalidPetCreationData")
     @DisplayName("Verify Pet Creation rejects payloads missing required fields")
@@ -145,7 +147,7 @@ public class PetStoreDdtTest {
         placeOrder(orderPayload, expectedStatusCode);
     }
 
-    @Tag("known-defect")
+    @Tag(TestTags.KNOWN_DEFECT)
     @ParameterizedTest(name = "DDT-Order: Placing invalid order petId={0}, quantity={1}, status={2} should return status {3}")
     @MethodSource("provideInvalidOrderCreationData")
     @DisplayName("Verify Order Creation rejects invalid quantity, status and shipDate")

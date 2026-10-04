@@ -5,9 +5,11 @@ import com.api.blueprint.integration.support.PetStoreFixture;
 import com.api.blueprint.models.Order;
 import com.api.blueprint.models.Pet;
 import com.api.blueprint.models.User;
+import com.api.blueprint.support.TestTags;
 import io.qameta.allure.*;
 import io.restassured.path.json.JsonPath;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -25,6 +27,7 @@ import static org.hamcrest.Matchers.*;
  */
 @Epic("Inventory Management System")
 @Feature("Pet Lifecycle Operations")
+@Tag(TestTags.REGRESSION)
 public class PetStoreIntegrationTest {
 
     private final PetStoreFixture fixture = new PetStoreFixture();
@@ -37,6 +40,7 @@ public class PetStoreIntegrationTest {
     // --- Pet lifecycle ---
 
     @Test
+    @Tag(TestTags.SMOKE)
     @Story("As an API client, I can authenticate to get a session token")
     @Severity(SeverityLevel.BLOCKER)
     @Description("Authenticates via user/login and checks that a session token message is returned.")
@@ -54,6 +58,7 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
+    @Tag(TestTags.SMOKE)
     @Story("As an administrator, I can create a new pet")
     @Severity(SeverityLevel.CRITICAL)
     @Description("Creates a pet with POST and verifies the stored record echoes the request.")
@@ -77,6 +82,7 @@ public class PetStoreIntegrationTest {
     }
 
     @Test
+    @Tag(TestTags.SMOKE)
     @Story("As an administrator, I can retrieve pet details by ID")
     @Severity(SeverityLevel.CRITICAL)
     @Description("Retrieves a freshly created pet by id and verifies its fields.")
@@ -217,6 +223,7 @@ public class PetStoreIntegrationTest {
     // --- Store orders ---
 
     @Test
+    @Tag(TestTags.SMOKE)
     @Story("Verify placing an order returns 200 details")
     public void placeOrder_ShouldSucceed() {
         Order order = fixture.newOrder();
@@ -310,6 +317,7 @@ public class PetStoreIntegrationTest {
     // --- Users ---
 
     @Test
+    @Tag(TestTags.SMOKE)
     @Story("Create new user record successfully")
     public void createUser_ShouldSucceed() {
         User user = fixture.newUser();

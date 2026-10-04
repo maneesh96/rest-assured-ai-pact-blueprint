@@ -17,9 +17,11 @@
         <allure.version>2.25.0</allure.version>
         <jackson.version>2.16.1</jackson.version>
         <aspectj.version>1.9.21</aspectj.version>
-        <!-- JUnit 5 tag expressions for Surefire. Tests tagged "known-defect" assert
-             spec behaviour the live API does not meet yet (see KNOWN_DEFECTS.md),
-             so the default run leaves them out. -->
+        <!-- JUnit 5 tag expressions for Surefire. Every test carries a layer tag
+             (smoke, regression or contract; names in TestTags) and the profiles
+             below select one layer. Tests tagged "known-defect" assert spec
+             behaviour the live API does not meet yet (see KNOWN_DEFECTS.md), so
+             every run except -Pknown-defects leaves them out. -->
         <test.groups></test.groups>
         <test.excludedGroups>known-defect</test.excludedGroups>
     </properties>
@@ -163,6 +165,30 @@
     </build>
 
     <profiles>
+        <!-- mvn test -Psmoke: critical paths plus offline unit tests; the pull-request gate. -->
+        <profile>
+            <id>smoke</id>
+            <properties>
+                <test.groups>smoke</test.groups>
+            </properties>
+        </profile>
+
+        <!-- mvn test -Pregression: the full functional suite, without the Pact contracts. -->
+        <profile>
+            <id>regression</id>
+            <properties>
+                <test.groups>regression</test.groups>
+            </properties>
+        </profile>
+
+        <!-- mvn test -Pcontract: Pact consumer contracts only; writes target/pacts. -->
+        <profile>
+            <id>contract</id>
+            <properties>
+                <test.groups>contract</test.groups>
+            </properties>
+        </profile>
+
         <!-- mvn test -Pknown-defects: run only the known-defect tests. They are
              expected to fail until the API is fixed. -->
         <profile>

@@ -10,7 +10,9 @@ import au.com.dius.pact.consumer.junit5.PactTestFor;
 import au.com.dius.pact.core.model.RequestResponsePact;
 import au.com.dius.pact.core.model.annotations.Pact;
 import au.com.dius.pact.core.model.PactSpecVersion;
+import com.api.blueprint.support.TestTags;
 import io.restassured.RestAssured;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -21,6 +23,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 
+@Tag(TestTags.CONTRACT)
 @ExtendWith(PactConsumerTestExt.class)
 @PactTestFor(providerName = "SwaggerPetstoreProvider", port = "8888", pactVersion = PactSpecVersion.V3)
 public class PetStoreConsumerContractTest {

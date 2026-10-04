@@ -1,7 +1,9 @@
 package com.api.blueprint.ai;
 
+import com.api.blueprint.support.TestTags;
 import org.json.JSONArray;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -14,7 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Offline unit tests: nothing here opens a network connection. */
+/**
+ * Offline unit tests: nothing here opens a network connection, so they also run in the
+ * pull-request smoke suite.
+ */
+@Tag(TestTags.SMOKE)
+@Tag(TestTags.REGRESSION)
 class ClaudeClientTest {
 
     @Nested

@@ -41,8 +41,12 @@ jobs:
       - name: Stage 1 - AI Schema Drift Detection
         run: mvn -B compile exec:java -Dexec.mainClass="com.api.blueprint.ai.SchemaDriftDetector"
 
+      # Pull requests get the fast smoke gate; main and staging run every layer
+      # (smoke, regression and contract) before main may move.
       - name: Stage 2 - Execute REST Assured & Pact Suites
-        run: mvn -B test
+        env:
+          TEST_PROFILE: ${{ github.event_name == 'pull_request' && '-Psmoke' || '' }}
+        run: mvn -B test $TEST_PROFILE
 
       - name: Stage 3 - Archive Raw Allure Results
         if: always()
@@ -63,9 +67,10 @@ jobs:
           if-no-files-found: ignore
 
       # Publishing needs a Pact Broker. Forks and fresh clones don't have one,
-      # so the step is skipped instead of failing the pipeline.
+      # so the step is skipped instead of failing the pipeline. Pull requests
+      # run only the smoke layer, which writes no pacts.
       - name: Stage 4 - Publish Pact Contracts to Broker
-        if: success() && env.PACT_BROKER_URL != ''
+        if: success() && env.PACT_BROKER_URL != '' && github.event_name != 'pull_request'
         run: mvn -B pact:publish -Dpact.pactBrokerUrl="$PACT_BROKER_URL" -Dpact.pactBrokerToken="$PACT_BROKER_TOKEN"
 
   # Tests tagged "known-defect" assert spec behaviour the live petstore does not

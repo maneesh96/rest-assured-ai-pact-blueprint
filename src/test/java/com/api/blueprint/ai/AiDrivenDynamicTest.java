@@ -1,6 +1,7 @@
 package com.api.blueprint.ai;
 
 import com.api.blueprint.config.ApiConfig;
+import com.api.blueprint.support.TestTags;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.DynamicTest;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * tagged "known-defect": they expect 400, the live petstore accepts them, and
  * they are excluded from the default run (see KNOWN_DEFECTS.md).
  */
+@Tag(TestTags.REGRESSION)
 public class AiDrivenDynamicTest {
 
     @TestFactory
@@ -64,7 +66,7 @@ public class AiDrivenDynamicTest {
         return toDynamicTests("AI Generated (Dynamic): ", generatedTestsArray);
     }
 
-    @Tag("known-defect")
+    @Tag(TestTags.KNOWN_DEFECT)
     @TestFactory
     public Collection<DynamicTest> specViolationsMustBeRejected() {
         return toDynamicTests("Spec violation (Dynamic): ", getSpecViolationTestCases());
