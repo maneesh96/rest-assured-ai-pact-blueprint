@@ -5,6 +5,7 @@ import com.api.blueprint.integration.support.PetStoreFixture;
 import com.api.blueprint.models.Order;
 import com.api.blueprint.models.Pet;
 import com.api.blueprint.models.User;
+import com.api.blueprint.support.JsonSchemas;
 import com.api.blueprint.support.TestTags;
 import io.qameta.allure.*;
 import io.restassured.path.json.JsonPath;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static io.restassured.RestAssured.given;
+import static io.restassured.module.jsv.JsonSchemaValidator.matchesJsonSchemaInClasspath;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
@@ -61,7 +63,7 @@ public class PetStoreIntegrationTest {
     @Tag(TestTags.SMOKE)
     @Story("As an administrator, I can create a new pet")
     @Severity(SeverityLevel.CRITICAL)
-    @Description("Creates a pet with POST and verifies the stored record echoes the request.")
+    @Description("Creates a pet with POST and verifies the response matches the Pet schema and echoes the request.")
     public void createPet_ShouldReturnCreatedPet() {
         Pet pet = fixture.newPet("Maximus", "available");
         fixture.trackPet(pet.getId());
@@ -74,6 +76,7 @@ public class PetStoreIntegrationTest {
         .then()
                 .spec(ApiConfig.getBaseResponseSpec())
                 .statusCode(200)
+                .body(matchesJsonSchemaInClasspath(JsonSchemas.PET))
                 .body("name", equalTo("Maximus"))
                 .body("status", equalTo("available"))
                 .extract().jsonPath();
@@ -85,7 +88,7 @@ public class PetStoreIntegrationTest {
     @Tag(TestTags.SMOKE)
     @Story("As an administrator, I can retrieve pet details by ID")
     @Severity(SeverityLevel.CRITICAL)
-    @Description("Retrieves a freshly created pet by id and verifies its fields.")
+    @Description("Retrieves a freshly created pet by id and verifies it matches the Pet schema.")
     public void getPet_ShouldReturnExistingPet() {
         Pet pet = fixture.givenPet("Maximus", "available");
 
@@ -93,6 +96,7 @@ public class PetStoreIntegrationTest {
         .then()
                 .spec(ApiConfig.getBaseResponseSpec())
                 .statusCode(200)
+                .body(matchesJsonSchemaInClasspath(JsonSchemas.PET))
                 .body("name", equalTo("Maximus"))
                 .body("status", equalTo("available"))
                 .extract().jsonPath();
@@ -117,6 +121,7 @@ public class PetStoreIntegrationTest {
         .then()
                 .spec(ApiConfig.getBaseResponseSpec())
                 .statusCode(200)
+                .body(matchesJsonSchemaInClasspath(JsonSchemas.PET))
                 .body("name", equalTo("Maximus II"))
                 .body("status", equalTo("pending"))
                 .extract().jsonPath();
@@ -236,6 +241,7 @@ public class PetStoreIntegrationTest {
                 .post("/store/order")
         .then()
                 .statusCode(200)
+                .body(matchesJsonSchemaInClasspath(JsonSchemas.ORDER))
                 .body("quantity", equalTo(5))
                 .body("status", equalTo("placed"))
                 .body("complete", equalTo(false))
@@ -253,6 +259,7 @@ public class PetStoreIntegrationTest {
         JsonPath fetched = fixture.getWhenStatus(200, "/store/order/{orderId}", order.getId())
         .then()
                 .statusCode(200)
+                .body(matchesJsonSchemaInClasspath(JsonSchemas.ORDER))
                 .body("status", equalTo("placed"))
                 .extract().jsonPath();
 

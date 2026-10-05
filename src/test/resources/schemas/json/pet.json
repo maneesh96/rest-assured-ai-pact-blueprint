@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "Pet",
+  "description": "A Pet as returned by the Petstore, following components.schemas.Pet in petstore-openapi.yaml. Extra properties are allowed so additive API changes do not break the suite.",
+  "type": "object",
+  "required": ["id", "name", "photoUrls", "status"],
+  "properties": {
+    "id": { "type": "integer" },
+    "category": { "$ref": "#/definitions/category" },
+    "name": { "type": "string" },
+    "photoUrls": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/tag" }
+    },
+    "status": { "enum": ["available", "pending", "sold"] }
+  },
+  "definitions": {
+    "category": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "name": { "type": "string" }
+      }
+    },
+    "tag": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "name": { "type": "string" }
+      }
+    }
+  }
+}

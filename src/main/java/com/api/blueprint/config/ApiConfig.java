@@ -3,6 +3,8 @@ package com.api.blueprint.config;
 import io.qameta.allure.restassured.AllureRestAssured;
 import io.restassured.builder.RequestSpecBuilder;
 import io.restassured.builder.ResponseSpecBuilder;
+import io.restassured.config.LogConfig;
+import io.restassured.config.RestAssuredConfig;
 import io.restassured.filter.log.LogDetail;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
@@ -45,14 +47,18 @@ public class ApiConfig {
 
     /**
      * Constructs the baseline request specification.
-     * Injects the AllureRestAssured filter to guarantee all HTTP traffic is logged to the HTML report.
+     *
+     * <p>The AllureRestAssured filter attaches every request and response to the report, so the
+     * console only prints the full exchange when a {@code then()} validation fails. Passing runs
+     * stay quiet and a failure still shows exactly what was sent and received.
      */
     public static RequestSpecification getBaseRequestSpec() {
         return new RequestSpecBuilder()
                 .setBaseUri(BASE_URL)
                 .setContentType(ContentType.JSON)
-                .addFilter(new AllureRestAssured()) // Automatically attaches requests/responses to Allure
-                .log(LogDetail.ALL)
+                .addFilter(new AllureRestAssured())
+                .setConfig(RestAssuredConfig.config().logConfig(
+                        LogConfig.logConfig().enableLoggingOfRequestAndResponseIfValidationFails(LogDetail.ALL)))
                 .build();
     }
 
