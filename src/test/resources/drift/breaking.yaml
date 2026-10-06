@@ -1,0 +1,84 @@
+# Baseline with one breaking change of each kind:
+#   - /store/inventory removed (REMOVED_PATH)
+#   - DELETE /pet/{petId} removed (REMOVED_OPERATION)
+#   - Pet.status now required (NEW_REQUIRED_REQUEST_FIELD)
+#   - query parameter "status" now required (NEW_REQUIRED_PARAMETER)
+#   - Category.name removed (REMOVED_RESPONSE_FIELD)
+#   - Pet.id and the photoUrls items changed type (CHANGED_TYPE)
+openapi: 3.0.2
+info:
+  title: Drift fixture
+  version: 2.0.0
+paths:
+  /pet:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pet'
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+  /pet/{petId}:
+    parameters:
+      - name: petId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      responses:
+        '200':
+          description: Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+  /pet/findByStatus:
+    get:
+      parameters:
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Matching pets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pet'
+components:
+  schemas:
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+    Pet:
+      type: object
+      required:
+        - name
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        category:
+          $ref: '#/components/schemas/Category'
+        photoUrls:
+          type: array
+          items:
+            type: object

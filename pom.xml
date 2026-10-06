@@ -17,6 +17,7 @@
         <allure.version>2.25.0</allure.version>
         <jackson.version>2.16.1</jackson.version>
         <aspectj.version>1.9.21</aspectj.version>
+        <snakeyaml.version>2.2</snakeyaml.version>
         <!-- JUnit 5 tag expressions for Surefire. Every test carries a layer tag
              (smoke, regression or contract; names in TestTags) and the profiles
              below select one layer. Tests tagged "known-defect" assert spec
@@ -101,6 +102,13 @@
             <groupId>io.qameta.allure</groupId>
             <artifactId>allure-rest-assured</artifactId>
             <version>${allure.version}</version>
+        </dependency>
+
+        <!-- YAML parser for the offline OpenAPI structural diff -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>${snakeyaml.version}</version>
         </dependency>
 
         <!-- JSON parsing helper for AI response processing -->

@@ -3,38 +3,34 @@ package com.api.blueprint.ai;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
 public class SchemaDriftDetector {
 
-    public static void main(String[] args) {
-        String baselineSpecPath = "src/test/resources/schemas/petstore-openapi.yaml";
-        String currentSpecPath = "src/test/resources/schemas/petstore-openapi-current.yaml";
+    private static final String DEFAULT_BASELINE = "src/test/resources/schemas/petstore-openapi.yaml";
+    private static final String DEFAULT_CURRENT = "src/test/resources/schemas/petstore-openapi-current.yaml";
 
-        // Double check directories relative to current path
-        if (!new File(baselineSpecPath).exists()) {
-            baselineSpecPath = "../" + baselineSpecPath;
-            currentSpecPath = "../" + currentSpecPath;
+    /**
+     * Usage: {@code SchemaDriftDetector [baselineSpec] [currentSpec]}. With no current spec
+     * on disk there is nothing to compare, so the check passes without writing any file.
+     */
+    public static void main(String[] args) {
+        String baselineSpecPath = args.length > 0 ? args[0] : DEFAULT_BASELINE;
+        String currentSpecPath = args.length > 1 ? args[1] : DEFAULT_CURRENT;
+
+        if (!Files.exists(Paths.get(baselineSpecPath))) {
+            System.err.println(">>> FAILURE: Baseline spec not found at: " + baselineSpecPath);
+            System.exit(1);
+        }
+        if (!Files.exists(Paths.get(currentSpecPath))) {
+            System.out.println("No current spec at " + currentSpecPath + "; nothing to compare against the baseline.");
+            return;
         }
 
         try {
-            // If the current spec doesn't exist, create it from the baseline to prevent crashes
-            File currentFile = new File(currentSpecPath);
-            if (!currentFile.exists()) {
-                File baselineFile = new File(baselineSpecPath);
-                if (baselineFile.exists()) {
-                    Files.copy(baselineFile.toPath(), currentFile.toPath());
-                    System.out.println("No current spec found. Created a copy of baseline at: " + currentSpecPath);
-                } else {
-                    System.err.println("Baseline spec not found at: " + baselineSpecPath);
-                    return;
-                }
-            }
-
             detectSchemaDrift(currentSpecPath, baselineSpecPath);
-            System.out.println(">>> SUCCESS: AI Schema Drift Detection completed. No breaking changes found.");
+            System.out.println(">>> SUCCESS: Schema drift detection completed. No breaking changes found.");
         } catch (Exception e) {
             System.err.println(">>> FAILURE: " + e.getMessage());
             System.exit(1);
@@ -64,51 +60,26 @@ public class SchemaDriftDetector {
 
         // Offline / Fallback verification
         if (breakingChanges == null) {
-            System.out.println("Running offline drift detection...");
+            System.out.println("Running offline structural drift detection...");
             breakingChanges = detectOfflineSchemaDrift(baselineSpec, currentSpec);
         }
 
         // Fail the pipeline immediately if structural drift is detected
         if (breakingChanges.length() > 0) {
-            throw new RuntimeException("CRITICAL: AI Schema Drift Detector flagged breaking changes. Halting test execution. " + 
-                                       "Details: \n" + breakingChanges.toString(2));
+            throw new IllegalStateException("Schema drift detector flagged breaking changes. Halting test execution.\n"
+                    + breakingChanges.toString(2));
         }
     }
 
-    /**
-     * Fallback utility to perform structural comparisons offline.
-     * Simple string comparison for structural equality. If the files are different, we perform
-     * basic keyword matching to detect removed endpoints or fields.
-     */
-    private static JSONArray detectOfflineSchemaDrift(String baselineSpec, String currentSpec) {
+    /** Rule-based structural diff used when Claude is not configured or does not answer. */
+    static JSONArray detectOfflineSchemaDrift(String baselineSpec, String currentSpec) {
         JSONArray changes = new JSONArray();
-
-        if (baselineSpec.trim().equals(currentSpec.trim())) {
-            return changes; // Specs are identical, no drift.
+        for (OpenApiStructuralDiff.Finding finding : OpenApiStructuralDiff.compare(baselineSpec, currentSpec)) {
+            changes.put(new JSONObject()
+                    .put("endpoint", finding.endpoint())
+                    .put("changeType", finding.changeType())
+                    .put("description", finding.description()));
         }
-
-        // Check for basic backward-incompatible mutations (Offline check)
-        // E.g., if baseline has a specific path that is missing in current
-        String[] endpoints = {"/pet", "/pet/findByStatus", "/pet/{petId}", "/store/order", "/store/order/{orderId}", "/store/inventory", "/user", "/user/login"};
-        for (String endpoint : endpoints) {
-            if (baselineSpec.contains(endpoint) && !currentSpec.contains(endpoint)) {
-                changes.put(new JSONObject()
-                        .put("endpoint", endpoint)
-                        .put("changeType", "REMOVED_ENDPOINT")
-                        .put("description", "The endpoint '" + endpoint + "' has been removed from the specification."));
-            }
-        }
-
-        // Check if mandatory fields in Pet schema are mutated
-        if (baselineSpec.contains("required:\n        - name") && !currentSpec.contains("required:\n        - name")) {
-            // Name was required, now isn't? That's actually backward compatible.
-        }
-        
-        // If they differ and no specific endpoint removal is caught, flag a generic modification
-        if (changes.length() == 0) {
-            System.out.println("Offline check: Specifications differ but no endpoints were removed.");
-        }
-
         return changes;
     }
 }
