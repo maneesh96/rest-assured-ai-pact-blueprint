@@ -1,0 +1,62 @@
+<div>POST to https://petstore.swagger.io/v2/user/createWithArray</div>
+
+<h4>Body</h4>
+<div>
+    <pre class="preformated-text">
+[
+    {
+        &quot;id&quot;: 2940839683946070,
+        &quot;username&quot;: &quot;qa_user_5675150e85b8&quot;,
+        &quot;firstName&quot;: &quot;QA&quot;,
+        &quot;lastName&quot;: &quot;Tester&quot;,
+        &quot;email&quot;: &quot;qa_user_5675150e85b8@example.com&quot;,
+        &quot;password&quot;: &quot;pass123&quot;,
+        &quot;phone&quot;: &quot;555-5555&quot;,
+        &quot;userStatus&quot;: 1
+    },
+    {
+        &quot;id&quot;: 6802405392376597,
+        &quot;username&quot;: &quot;qa_user_79d28d0b5853&quot;,
+        &quot;firstName&quot;: &quot;QA&quot;,
+        &quot;lastName&quot;: &quot;Tester&quot;,
+        &quot;email&quot;: &quot;qa_user_79d28d0b5853@example.com&quot;,
+        &quot;password&quot;: &quot;pass123&quot;,
+        &quot;phone&quot;: &quot;555-5555&quot;,
+        &quot;userStatus&quot;: 1
+    }
+]    </pre>
+</div>
+
+<h4>Headers</h4>
+<div>
+        <div>Accept: */*</div>
+        <div>Content-Type: application/json</div>
+</div>
+
+
+
+<h4>Curl</h4>
+<div>
+curl -v -X POST &#39;https://petstore.swagger.io/v2/user/createWithArray&#39; -H &#39;Accept: */*&#39; -H &#39;Content-Type: application/json&#39; -d &#39;[
+    {
+        &quot;id&quot;: 2940839683946070,
+        &quot;username&quot;: &quot;qa_user_5675150e85b8&quot;,
+        &quot;firstName&quot;: &quot;QA&quot;,
+        &quot;lastName&quot;: &quot;Tester&quot;,
+        &quot;email&quot;: &quot;qa_user_5675150e85b8@example.com&quot;,
+        &quot;password&quot;: &quot;pass123&quot;,
+        &quot;phone&quot;: &quot;555-5555&quot;,
+        &quot;userStatus&quot;: 1
+    },
+    {
+        &quot;id&quot;: 6802405392376597,
+        &quot;username&quot;: &quot;qa_user_79d28d0b5853&quot;,
+        &quot;firstName&quot;: &quot;QA&quot;,
+        &quot;lastName&quot;: &quot;Tester&quot;,
+        &quot;email&quot;: &quot;qa_user_79d28d0b5853@example.com&quot;,
+        &quot;password&quot;: &quot;pass123&quot;,
+        &quot;phone&quot;: &quot;555-5555&quot;,
+        &quot;userStatus&quot;: 1
+    }
+]&#39;
+</div>
