@@ -1,108 +1,152 @@
-# 🚀 Advanced API Quality Engineering Blueprint
+# REST Assured + Pact + AI API Test Blueprint
 
-An enterprise-grade, Java-based API test automation framework targeting comprehensive quality assurance for public and private APIs (e.g., Swagger Petstore). This framework strictly utilizes REST Assured for stateful integration testing, Pact for consumer-driven contract testing, and an innovative AI Layer (Claude) for autonomous test generation and dynamic schema drift detection.
+[![Advanced API Quality Pipeline](https://github.com/maneesh96/rest-assured-ai-pact-blueprint/actions/workflows/ci-pipeline.yml/badge.svg?branch=main)](https://github.com/maneesh96/rest-assured-ai-pact-blueprint/actions/workflows/ci-pipeline.yml)
+[![Allure report](https://img.shields.io/badge/report-Allure-orange)](https://maneesh96.github.io/rest-assured-ai-pact-blueprint/)
 
----
+A Java 17 / Maven API test framework for the public
+[Swagger Petstore](https://petstore.swagger.io/v2). It combines REST Assured integration
+tests, Pact consumer contracts, JSON-schema validation, an OpenAPI drift check and an
+optional Claude-backed test generator, and it keeps spec violations the live API
+does not meet in a separate, clearly labelled known-defect set instead of asserting
+them as passing.
 
-## 🏗 Architectural Philosophy & Design Decisions
+The latest Allure report from `main` is published at
+**https://maneesh96.github.io/rest-assured-ai-pact-blueprint/**.
 
-This framework intentionally separates structural contract verification from functional logic validation to eliminate the fragility associated with traditional end-to-end testing environments.
+## Architecture
 
-- **Integration Testing (REST Assured):** Focused exclusively on business logic, authentication flows, request chaining, and HTTP assertions against live environments. REST Assured is utilized for its powerful BDD Domain Specific Language and seamless integration with Jackson for POJO serialization.
-- **Contract Testing (Pact JVM):** Ensures the structural integrity of the API between the consumer and provider. By mocking the provider during test execution and matching on regex/types rather than hardcoded values, Pact prevents brittle tests and rapidly identifies schema violations without network latency.
-- **AI Quality Layer (Anthropic Claude):** Traditional static validation tools are limited to strict syntax checking and happy-path fuzzing. This framework leverages an LLM to parse OpenAPI specifications, autonomously generating complex, adversarial test payloads via JUnit 5 `@TestFactory`, while simultaneously flagging context-aware breaking changes before CI execution begins.
+```mermaid
+flowchart LR
+    subgraph CI["GitHub Actions (push to main / staging, pull requests)"]
+        D["Stage 1: SchemaDriftDetector"] --> T["Stage 2: mvn test<br/>(-Psmoke on pull requests)"]
+        T --> A["Allure results + pact files<br/>(artifacts)"]
+        A --> P["Allure HTML report<br/>gh-pages (main only)"]
+        T -. optional .-> B["pact:publish<br/>(only if PACT_BROKER_URL is set)"]
+        K["known-defects job<br/>mvn test -Pknown-defects<br/>(never fails the pipeline)"]
+    end
 
----
+    subgraph Tests["src/test/java"]
+        I["Integration + data-driven<br/>REST Assured"] --> PS[("petstore.swagger.io/v2")]
+        S["JsonSchemas<br/>pet.json / order.json"] --- I
+        C["Pact consumer contracts"] --> M[("Pact mock server<br/>localhost:8888")]
+        G["AiDrivenDynamicTest"] --> PS
+    end
 
-## 🛠 Technology Stack & Dependencies
+    subgraph AI["src/main/java/.../ai"]
+        CC["ClaudeClient"] -. ANTHROPIC_API_KEY set .-> CL[("Anthropic Messages API")]
+        DD["OpenApiStructuralDiff<br/>(offline fallback)"]
+    end
 
-- **Java 17+** (JDK environment)
-- **Apache Maven 3.9+** (Build tool and dependency management)
-- **JUnit 5 (Jupiter)** (Test execution framework and parameterized engines)
-- **REST Assured 5.4.0** (BDD style API client)
-- **Jackson Databind** (JSON-to-POJO serialization/deserialization)
-- **Pact Consumer JUnit 5** (Consumer contract definition and mock server framework)
-- **Allure Jupiter** (Reporting, AspectJ bytecode weaving, and telemetry capture)
-- **Anthropic Claude API** (Semantic schema analysis and dynamic test factory)
-
----
-
-## 📂 Directory Topology
-
-```
-rest-assured-ai-pact-blueprint/
-├── src/
-│   ├── main/
-│   │   └── java/
-│   │       └── com/api/blueprint/
-│   │           ├── client/           # Core REST Assured HTTP client wrappers and interceptors
-│   │           ├── config/           # Environment, global configurations, and secrets management
-│   │           ├── models/           # POJOs for Jackson serialization/deserialization
-│   │           └── ai/               # AI (Claude) integration layer, HTTP client, and prompt builders
-│   └── test/
-│       ├── java/
-│       │   └── com/api/blueprint/
-│       │       ├── integration/      # REST Assured integration tests (business logic)
-│       │       ├── contract/         # Pact consumer contract tests (structural agreements)
-│       │       └── utils/            # Test data generators, dynamic payloads, and assertions
-│       └── resources/
-│           ├── allure.properties     # Allure reporting configuration directives
-│           ├── test-env.properties   # Environment-specific configuration variables
-│           └── schemas/              # Baseline OpenAPI specifications (YAML/JSON)
-├── .github/
-│   └── workflows/
-│       └── ci-pipeline.yml           # GitHub Actions Continuous Integration pipeline
-├── pom.xml                           # Maven dependencies, profiles, and AspectJ plugins
-└── README.md                         # Comprehensive framework documentation and execution guide
+    G --> CC
+    D --> CC
+    D --> DD
+    T --> Tests
 ```
 
----
+Both AI features work without an API key: `ClaudeClient` reports itself as not
+configured and the callers switch to their offline paths (a fixed set of adversarial
+payloads for the generator, a rule-based structural diff for drift detection), so a
+fresh clone and pull requests from forks build without secrets.
 
-## 🚀 Execution Guide
+## Test layers
 
-### 1. Environment Initialization
+Counts are from the latest `main` pipeline run (141 tests, all passing). The 15
+known-defect cases are excluded from that run and listed separately below.
 
-Ensure Java 17 and Maven are installed. To run the live Claude AI integrations, you must export your API key:
+| Layer | Where | Tag(s) | Tests | What it checks |
+| --- | --- | --- | --- | --- |
+| Contract | `contract/PetStoreConsumerContractTest` | `contract` | 3 | Pact V3 consumer contracts for `GET /v2/pet/{id}` and `POST /v2/pet`, matched by type against a local Pact mock server; pact files land in `target/pacts`. |
+| Integration | `integration/PetStoreIntegrationTest` | `regression` (5 methods also `smoke`) | 28 | Chained create / read / update / delete flows for pets, orders and users against the live petstore. Each test creates its own data through `PetStoreFixture`, so the order they run in does not matter. |
+| Data-driven | `integration/PetStoreDdtTest` | `regression` | 59 | `@ParameterizedTest` boundary and validation cases for the pet, store and user endpoints. |
+| AI-generated | `ai/AiDrivenDynamicTest` | `regression` | 6 | `@TestFactory` cases for `POST /pet`, generated by Claude from the OpenAPI spec when `ANTHROPIC_API_KEY` is set, otherwise from the offline set. |
+| Schema drift | `ai/OpenApiStructuralDiffTest` | `smoke`, `regression` | 16 | Offline structural diff of two OpenAPI specs: removed paths or operations, newly required request fields, removed response fields and changed types, using the fixtures in `src/test/resources/drift/`. |
+| Unit (offline) | `ai/ClaudeClientTest`, `support/JsonSchemasTest` | `smoke`, `regression` | 29 | Model resolution order, markdown-fence stripping and the not-configured case in `ClaudeClient`; the Pet and Order JSON schemas accept valid and reject invalid documents. |
+
+Every live response for Pet and Order is also validated against the JSON schemas in
+`src/test/resources/schemas/json/`. The shared request spec in `ApiConfig` logs the
+full exchange only when a validation fails, so passing runs stay quiet; the Allure
+REST Assured filter still attaches every request and response to the report.
+
+## Running it
+
+Requirements: Java 17 and Maven 3.9+. The integration and data-driven layers call
+`https://petstore.swagger.io/v2`, so they need network access to it.
+
+| Command | Runs |
+| --- | --- |
+| `mvn test` | Every layer except `known-defect` (what CI runs on `main` and `staging`) |
+| `mvn test -Psmoke` | Offline unit tests plus the five critical-path integration tests (what CI runs on pull requests) |
+| `mvn test -Pregression` | Integration, data-driven, AI-generated and unit tests, without the Pact contracts |
+| `mvn test -Pcontract` | Pact consumer contracts only; writes `target/pacts` |
+| `mvn test -Pknown-defects` | Only the known-defect tests; they are expected to fail |
+| `mvn allure:serve` | Builds and opens the Allure report from `target/allure-results` |
+
+### Claude (optional)
 
 ```bash
-export ANTHROPIC_API_KEY="your-api-key"
+export ANTHROPIC_API_KEY=...          # enables the Claude paths
+export ANTHROPIC_MODEL=claude-sonnet-4-6   # optional override
 ```
 
-> [!NOTE]
-> If `ANTHROPIC_API_KEY` is not present, the framework automatically triggers an **offline fallback generator** for both the Dynamic Test Generator and Schema Drift Detector. This ensures the maven build remains green and executes successfully on local boxes and basic pull requests.
+The model is resolved in this order: the `ANTHROPIC_MODEL` environment variable, then
+`anthropic.model` in `src/test/resources/test-env.properties`, then the default in
+`ClaudeClient`. Without a key, nothing calls the Anthropic API.
 
-### 2. Executing the Test Suites
-
-To execute the entire quality suite (over 100 tests consisting of 30 integration tests, 70 data-driven tests, 3 contract tests, and 10 dynamic tests):
+### Schema drift check
 
 ```bash
-mvn clean test
+mvn compile exec:java -Dexec.mainClass="com.api.blueprint.ai.SchemaDriftDetector" \
+    -Dexec.args="src/test/resources/schemas/petstore-openapi.yaml path/to/current-openapi.yaml"
 ```
 
-### 3. Running AI Schema Drift Detection (CI Pre-Hook)
+The first argument is the baseline spec and the second the spec to check. Any breaking
+change exits with status 1 and prints the list. In CI the step runs with the defaults,
+and because no `petstore-openapi-current.yaml` is committed there is nothing to compare
+yet, so it passes without checking anything. To make it a real gate, fetch the
+provider's current spec into that path before the step runs.
 
-To execute the AI-driven schema drift comparison before full suite test runs:
+### CI secrets
 
-```bash
-mvn compile exec:java -Dexec.mainClass="com.api.blueprint.ai.SchemaDriftDetector"
+All optional. Without them the pipeline still runs and stays green.
+
+| Secret | Effect |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Switches the generator and drift check from offline to Claude |
+| `PACT_BROKER_URL`, `PACT_BROKER_TOKEN` | Publishes the pact files to a Pact Broker after a green run |
+
+## Known defects
+
+The live petstore accepts several inputs its own OpenAPI spec forbids (for example a
+pet with no `name`, an order with a negative `quantity`, or an invalid `status` enum),
+and returns 500 for two malformed bodies. The tests for these assert the correct
+response (400), are tagged `known-defect` and run in their own CI job, which lists the
+defects that still reproduce and flags any that start passing. The full list, with
+expected and actual status codes, is in [KNOWN_DEFECTS.md](KNOWN_DEFECTS.md).
+
+## Project layout
+
+```
+.github/
+  workflows/ci-pipeline.yml        drift check, tests, artifacts, Allure to gh-pages, known-defects job
+  scripts/report_known_defects.py  job summary for the known-defects job
+src/main/java/com/api/blueprint/
+  ai/        ClaudeClient, SchemaDriftDetector, OpenApiStructuralDiff
+  config/    ApiConfig (base URI, REST Assured and Allure filter setup)
+  models/    Pet, Order, User, Category, Tag, ApiResponse (Jackson POJOs)
+src/test/java/com/api/blueprint/
+  ai/           AiDrivenDynamicTest, ClaudeClientTest, OpenApiStructuralDiffTest
+  contract/     PetStoreConsumerContractTest
+  integration/  PetStoreIntegrationTest, PetStoreDdtTest, support/PetStoreFixture
+  support/      TestTags, JsonSchemas, JsonSchemasTest
+src/test/resources/
+  schemas/petstore-openapi.yaml    baseline spec
+  schemas/json/                    Pet and Order JSON schemas
+  drift/                           baseline / breaking / compatible spec fixtures
+  test-env.properties              base URL, Pact names, Claude model
+KNOWN_DEFECTS.md
 ```
 
-### 4. Compiling and Viewing Telemetry
+## Stack
 
-The framework uses the `AllureRestAssured` AspectJ filter to intercept and capture all HTTP traffic seamlessly. To compile and view the interactive HTML report locally:
-
-```bash
-mvn allure:serve
-```
-
----
-
-## 📈 Test Coverage Metrics
-
-| Layer | Test Type | Library / Framework | Generated Test Cases | Purpose |
-|---|---|---|---|---|
-| **Layer 1** | Data-Driven Tests (DDT) | JUnit 5 `@ParameterizedTest` | **70** | Extreme parameter boundary checks for Pet, Store, and User APIs. |
-| **Layer 1** | Integration Tests | REST Assured | **30** | Chained HTTP workflows validating state transitions & APIs. |
-| **Layer 2** | Contract Tests | Pact JVM JUnit 5 | **3** | Schema structures verification against Mock provider server. |
-| **Layer 3** | AI-Driven Dynamic Tests | Anthropic Claude API | **10** | Dynamically synthesized test cases targeting adversarial payloads. |
-| **Total** | | | **113** | **Robust QA Gate** |
+Java 17, Maven, JUnit 5.10, REST Assured 5.4 (with `json-schema-validator`),
+Pact JVM 4.6, Jackson 2.16, SnakeYAML 2.2, Allure 2.25, GitHub Actions and GitHub Pages.
